@@ -1,0 +1,25 @@
+{
+  "name": "any-to-mp3",
+  "version": "1.0.0",
+  "description": "> Una herramienta robusta y ligera para convertir archivos de video (MP4, MKV, AVI) y audio (OGG, WAV) a formato MP3 de alta calidad.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JesusAraujoDEV/any-to-mp3.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/JesusAraujoDEV/any-to-mp3/issues"
+  },
+  "homepage": "https://github.com/JesusAraujoDEV/any-to-mp3#readme",
+  "dependencies": {
+    "@ffmpeg-installer/ffmpeg": "^1.1.0",
+    "fluent-ffmpeg": "^2.1.3"
+  }
+}
