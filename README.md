@@ -15,4 +15,4 @@
 
 1. Clona el repositorio:
    ```bash
-   git clone [https://github.com/JesusAraujoDEV/any-to-mp3.git](https://github.com/JesusAraujoDEV/any-to-mp3.git)
+   git clone https://github.com/JesusAraujoDEV/any-to-mp3.git
