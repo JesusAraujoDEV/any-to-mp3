@@ -59,4 +59,4 @@ const convertToMp3 = (inputFile, outputFolder = './output') => {
 // Puedes probar con diferentes formatos:
 // convertToMp3('mi_video.mp4');
 // convertToMp3('grabacion.mkv');
-convertToMp3('audio_whatsapp.ogg');
+convertToMp3('C:\\Users\\jaraujo\\Videos\\2026-08-31 REUNIÓN PLANIFICACIÓN.m4a');

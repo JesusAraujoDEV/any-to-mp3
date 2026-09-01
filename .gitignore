@@ -141,4 +141,14 @@ dist
 # SvelteKit build / generate output
 .svelte-kit
 
+.WhatsApp Ptt 2026-01-13 at 07.40.40.ogg
+
+output/
+
 # End of https://www.toptal.com/developers/gitignore/api/node
+
+*.mkv
+*.mp3
+*.ogg
+*.m4a
+*.mp4
