@@ -155,3 +155,7 @@ output/
 
 # Cookies de sesión de YouTube (NO subir a git)
 cookies.json
+cookies.txt
+
+# Binario de yt-dlp descargado automáticamente
+bin/

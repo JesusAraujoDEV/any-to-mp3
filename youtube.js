@@ -1,61 +1,42 @@
 const ffmpeg = require('fluent-ffmpeg');
 const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
-const ytdl = require('@distube/ytdl-core');
+const YTDlpWrap = require('yt-dlp-wrap').default;
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 
 // 1. Configuramos la ruta del binario de FFmpeg (para que funcione sin instalar nada en el OS)
 ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 
-/**
- * YouTube a veces bloquea peticiones con el mensaje "Sign in to confirm you're not a bot".
- * Para evitarlo, puedes exportar las cookies de tu navegador (ya con sesión iniciada)
- * a un archivo llamado "cookies.json" en la raíz del proyecto.
- *
- * Cómo obtenerlas:
- *  1. Instala una extensión como "Get cookies.txt LOCALLY" o "EditThisCookie".
- *  2. En YouTube (con sesión iniciada), exporta las cookies en formato JSON.
- *  3. Guarda ese contenido en cookies.json junto a este script.
- *
- * Si el archivo no existe, el script funciona igual (útil para videos que no requieren verificación).
- */
-let agent;
-const cookiesPath = path.join(__dirname, 'cookies.json');
-if (fs.existsSync(cookiesPath)) {
-    try {
-        const cookies = JSON.parse(fs.readFileSync(cookiesPath, 'utf-8'));
-        agent = ytdl.createAgent(cookies);
-        console.log('🍪 Cookies cargadas correctamente.');
-    } catch (err) {
-        console.warn(`⚠️  No se pudieron leer las cookies (${err.message}). Continuando sin ellas.`);
-    }
-}
+// Ruta local donde guardaremos el binario de yt-dlp (autocontenido en el proyecto)
+const binName = os.platform() === 'win32' ? 'yt-dlp.exe' : 'yt-dlp';
+const ytDlpBinaryPath = path.join(__dirname, 'bin', binName);
 
 /**
- * Limpia el título para usarlo como nombre de archivo válido en Windows/Linux/Mac
- * @param {string} name - Título original del video
- * @returns {string} Nombre seguro para el sistema de archivos
+ * Se asegura de que el binario de yt-dlp exista; si no, lo descarga automáticamente.
+ * @returns {Promise<YTDlpWrap>} instancia lista para usar
  */
-const sanitizeFileName = (name) => {
-    return name
-        .replace(/[<>:"/\\|?*]+/g, '')   // Caracteres prohibidos
-        .replace(/\s+/g, ' ')            // Espacios múltiples a uno
-        .trim()
-        .slice(0, 120);                  // Evitar nombres demasiado largos
+const ensureYtDlp = async () => {
+    const binDir = path.dirname(ytDlpBinaryPath);
+    if (!fs.existsSync(binDir)) {
+        fs.mkdirSync(binDir, { recursive: true });
+    }
+
+    if (!fs.existsSync(ytDlpBinaryPath)) {
+        console.log('⬇️  Descargando yt-dlp (solo la primera vez)...');
+        await YTDlpWrap.downloadFromGithub(ytDlpBinaryPath);
+        console.log('✅ yt-dlp descargado.');
+    }
+
+    return new YTDlpWrap(ytDlpBinaryPath);
 };
 
 /**
- * Descarga un video de YouTube y lo convierte a MP3
+ * Descarga un video de YouTube y lo convierte a MP3 usando yt-dlp + FFmpeg
  * @param {string} url - Enlace del video de YouTube
  * @param {string} outputFolder - Carpeta donde se guardará (opcional)
  */
-const youtubeToMp3 = async (url, outputFolder = './output') => {
-
-    // Validar que el enlace sea de YouTube
-    if (!ytdl.validateURL(url)) {
-        console.error(`❌ El enlace no es un video de YouTube válido: ${url}`);
-        return;
-    }
+const youtubeToMp3 = async (url, browser = null, outputFolder = './output') => {
 
     // Crear carpeta de salida si no existe
     if (!fs.existsSync(outputFolder)) {
@@ -63,60 +44,90 @@ const youtubeToMp3 = async (url, outputFolder = './output') => {
     }
 
     try {
-        // Opciones comunes (incluye el agent con cookies si está disponible)
-        const ytdlOptions = agent ? { agent } : {};
+        const ytDlp = await ensureYtDlp();
 
-        // Obtener información del video para usar el título como nombre
-        console.log(`🔍 Obteniendo información del video...`);
-        const info = await ytdl.getInfo(url, ytdlOptions);
-        const title = sanitizeFileName(info.videoDetails.title);
-        const outputPath = path.join(outputFolder, `${title}.mp3`);
+        console.log(`🔄 Iniciando descarga y conversión a MP3...`);
+        console.log(`🔗 ${url}`);
 
-        console.log(`🎬 Video: ${info.videoDetails.title}`);
-        console.log(`🔄 Iniciando descarga y conversión -> ${outputPath}`);
+        // yt-dlp se encarga de descargar el mejor audio y convertirlo a MP3.
+        // Usa el FFmpeg que ya tienes instalado vía @ffmpeg-installer.
+        // El nombre de salida será el título del video (%(title)s).
+        const outputTemplate = path.join(outputFolder, '%(title)s.%(ext)s');
 
-        // 2. Stream de solo audio (mejor calidad disponible)
-        const audioStream = ytdl(url, {
-            quality: 'highestaudio',
-            filter: 'audioonly',
-            ...ytdlOptions,
+        const args = [
+            url,
+            '-x',                              // Extraer solo audio
+            '--audio-format', 'mp3',           // Formato MP3
+            '--audio-quality', '0',            // Mejor calidad (VBR)
+            '--ffmpeg-location', ffmpegInstaller.path, // Reutilizamos el FFmpeg del proyecto
+            '-o', outputTemplate,
+            '--no-playlist',                   // Solo el video del enlace, no la playlist completa
+            '--js-runtimes', `node:${process.execPath}`, // Usa el Node actual para descifrar formatos de YouTube
+        ];
+
+        // --- Autenticación para evitar "Sign in to confirm you're not a bot" ---
+        // Opción A (recomendada): leer cookies directamente del navegador instalado.
+        //   Se activa pasando el navegador como 2º argumento: node youtube.js "<url>" chrome
+        //   Navegadores válidos: chrome, edge, firefox, brave, opera, vivaldi, chromium
+        // Opción B: exportar un archivo cookies.txt a la raíz del proyecto.
+        if (browser) {
+            args.push('--cookies-from-browser', browser);
+            console.log(`🍪 Usando cookies del navegador: ${browser}`);
+        } else {
+            const cookiesPath = path.join(__dirname, 'cookies.txt');
+            if (fs.existsSync(cookiesPath)) {
+                args.push('--cookies', cookiesPath);
+                console.log('🍪 Usando cookies.txt para autenticación.');
+            }
+        }
+
+        // Ejecutar yt-dlp mostrando el progreso en tiempo real
+        await new Promise((resolve, reject) => {
+            ytDlp.exec(args)
+                .on('progress', (progress) => {
+                    const percent = progress.percent != null ? `${progress.percent}%` : '...';
+                    const speed = progress.currentSpeed || '';
+                    process.stdout.write(`⏳ Descargando: ${percent} ${speed}          \r`);
+                })
+                .on('ytDlpEvent', (eventType, eventData) => {
+                    // Mostrar mensajes relevantes de la fase de conversión
+                    if (eventType === 'ExtractAudio' || /Destination|Converting/i.test(eventData)) {
+                        // silencioso; se resume al final
+                    }
+                })
+                .on('error', (err) => reject(err))
+                .on('close', () => resolve());
         });
 
-        audioStream.on('error', (err) => {
-            console.error(`\n❌ Error al descargar: ${err.message}`);
-        });
-
-        // 3. Convertir el stream a MP3 con FFmpeg
-        ffmpeg(audioStream)
-            .toFormat('mp3')
-            .audioBitrate('192k')
-            .audioChannels(2) // Estéreo
-            .on('progress', (progress) => {
-                const time = progress.timemark || 'calculando';
-                process.stdout.write(`⏳ Procesando: ${time} ... \r`);
-            })
-            .on('error', (err) => {
-                console.error(`\n❌ Error al convertir: ${err.message}`);
-            })
-            .on('end', () => {
-                console.log(`\n✅ Conversión completada exitosamente: ${outputPath}`);
-            })
-            .save(outputPath);
+        console.log(`\n✅ Conversión completada. Revisa la carpeta: ${path.resolve(outputFolder)}`);
 
     } catch (err) {
-        console.error(`\n❌ Error inesperado: ${err.message}`);
+        const msg = err && err.message ? err.message : String(err);
+        console.error(`\n❌ Error: ${msg}`);
+
+        if (/Sign in to confirm|not a bot|403|Forbidden/i.test(msg)) {
+            console.error('\n💡 YouTube está pidiendo verificación. Solución:');
+            console.error('   1. Instala la extensión "Get cookies.txt LOCALLY" en tu navegador.');
+            console.error('   2. Con tu sesión de YouTube abierta, exporta las cookies.');
+            console.error('   3. Guarda el archivo como "cookies.txt" en la raíz de este proyecto.');
+            console.error('   4. Vuelve a ejecutar el script.');
+        }
     }
 };
 
 // --- USO POR LÍNEA DE COMANDOS ---
-// Ejecuta:  node youtube.js "https://www.youtube.com/watch?v=XXXXXXX"
+// Ejecuta:  node youtube.js "https://www.youtube.com/watch?v=XXXXXXX" [navegador]
+// Ejemplos:
+//   node youtube.js "https://youtu.be/XXXX"            (sin cookies)
+//   node youtube.js "https://youtu.be/XXXX" chrome     (cookies desde Chrome)
+//   node youtube.js "https://youtu.be/XXXX" edge       (cookies desde Edge)
 const urlFromArgs = process.argv[2];
+const browserFromArgs = process.argv[3] || null;
 
 if (urlFromArgs) {
-    youtubeToMp3(urlFromArgs);
+    youtubeToMp3(urlFromArgs, browserFromArgs);
 } else {
-    // --- EJEMPLO DE USO DIRECTO ---
-    // Descomenta y coloca tu enlace:
-    // youtubeToMp3('https://www.youtube.com/watch?v=dQw4w9WgXcQ');
-    console.log('ℹ️  Uso: node youtube.js "<enlace_de_youtube>"');
+    console.log('ℹ️  Uso: node youtube.js "<enlace_de_youtube>" [navegador]');
+    console.log('   Navegadores: chrome, edge, firefox, brave, opera, vivaldi');
+    console.log('   Ejemplo: node youtube.js "https://youtu.be/XXXX" chrome');
 }
