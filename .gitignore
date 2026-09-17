@@ -152,3 +152,6 @@ output/
 *.ogg
 *.m4a
 *.mp4
+
+# Cookies de sesión de YouTube (NO subir a git)
+cookies.json

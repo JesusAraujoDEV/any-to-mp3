@@ -19,6 +19,7 @@
   },
   "homepage": "https://github.com/JesusAraujoDEV/any-to-mp3#readme",
   "dependencies": {
+    "@distube/ytdl-core": "^4.16.12",
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
     "fluent-ffmpeg": "^2.1.3"
   }
